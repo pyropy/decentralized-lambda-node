@@ -2,111 +2,71 @@ package node
 
 import (
 	"context"
-	"encoding/json"
-	"github.com/filecoin-project/bacalhau/pkg/job"
-	"github.com/filecoin-project/bacalhau/pkg/requester/publicapi"
+	"fmt"
 	"github.com/ipfs/go-cid"
-	"github.com/pkg/errors"
+	"github.com/pyropy/decentralised-lambda/executor/bacalhau"
+	"github.com/pyropy/decentralised-lambda/job"
+	"io"
 	"log"
 	"net/http"
-	"os"
+	"strings"
 	"time"
 
-	"github.com/filecoin-project/bacalhau/pkg/ipfs"
-	"github.com/filecoin-project/bacalhau/pkg/model"
 	"github.com/filecoin-project/bacalhau/pkg/system"
+	shell "github.com/ipfs/go-ipfs-api"
 )
 
-var DefaultTimeout = time.Second * 300
+var (
+	DefaultTimeout = time.Second * 300
+)
 
 type Node struct {
-	ipfsClient     *ipfs.Client
-	bacalhauClient *publicapi.RequesterAPIClient
+	ipfsClient       *shell.Shell
+	bacalhauExecutor *bacalhau.Executor
 }
 
 func NewNode(cfg *Config) (*Node, error) {
-	ipfsClient, err := ipfs.NewClient(cfg.IPFSEndpoint)
+	ipfsClient := shell.NewShell("localhost:5001")
+
+	err := system.InitConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	err = system.InitConfig()
-	if err != nil {
-		return nil, err
-	}
+	bacalhauExecutor := bacalhau.NewExecutor(cfg.BacalhauEndpoint)
 
-	bacalhauClient := publicapi.NewRequesterAPIClient(cfg.BacalhauEndpoint)
-
-	return &Node{ipfsClient: ipfsClient, bacalhauClient: bacalhauClient}, nil
+	return &Node{ipfsClient: ipfsClient, bacalhauExecutor: bacalhauExecutor}, nil
 }
 
-func newWasmJob(wasmCid cid.Cid, inputCid cid.Cid) *model.Job {
-	wasmJob, _ := model.NewJobWithSaneProductionDefaults()
-	wasmJob.Spec.Engine = model.EngineWasm
-	wasmJob.Spec.Verifier = model.VerifierNoop
-	wasmJob.Spec.Timeout = DefaultTimeout.Seconds()
-	wasmJob.Spec.Wasm.EntryPoint = "_start"
-	wasmJob.Spec.Wasm.EnvironmentVariables = map[string]string{}
-	wasmJob.Spec.Publisher = model.PublisherIpfs
-	wasmJob.Spec.Outputs = []model.StorageSpec{
-		{
-			Name: "outputs",
-			Path: "/outputs",
-		},
-	}
-	wasmJob.Spec.Contexts = append(wasmJob.Spec.Contexts, model.StorageSpec{
-		StorageSource: model.StorageSourceIPFS,
-		CID:           wasmCid.String(),
-		Path:          "/job",
-	})
-	return wasmJob
-}
-
-func (n *Node) InvokeLambdaFunction(ctx context.Context, wasmCID cid.Cid, request *http.Request) error {
+func (n *Node) InvokeLambdaFunction(ctx context.Context, wasmCid cid.Cid, request *http.Request) (string, error) {
 	cm := system.NewCleanupManager()
 	inputCid, err := n.prepareJobInput(ctx, request)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	wasmJob := newWasmJob(wasmCID, inputCid)
+	fmt.Println("inputCid", inputCid)
+	j := job.NewJob("", wasmCid, inputCid)
 	defer cm.Cleanup()
 
-	j, err := ExecuteJob(ctx, n.bacalhauClient, cm, wasmJob)
+	err = n.bacalhauExecutor.ExecuteJob(ctx, j)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	log.Println(j)
-	return nil
+	log.Println(fmt.Sprintf("%+v", j))
+	return "", nil
 }
 
 func (n *Node) prepareJobInput(ctx context.Context, request *http.Request) (cid.Cid, error) {
-	b, err := json.Marshal(request)
+	b, err := io.ReadAll(request.Body)
 	if err != nil {
-		return cid.Cid{}, nil
+		return cid.Cid{}, err
 	}
 
-	tmpFile, err := os.CreateTemp("", "input*.json")
+	inputCidString, err := n.ipfsClient.Add(strings.NewReader(string(b)))
 	if err != nil {
-		return cid.Cid{}, nil
-	}
-
-	defer func() {
-		err := os.RemoveAll(tmpFile.Name())
-		if err != nil {
-			log.Fatal(err)
-		}
-	}()
-
-	_, err = tmpFile.Write(b)
-	if err != nil {
-		return cid.Cid{}, nil
-	}
-
-	inputCidString, err := n.ipfsClient.Put(ctx, tmpFile.Name())
-	if err != nil {
-		return cid.Cid{}, nil
+		return cid.Cid{}, err
 	}
 
 	inputCid, err := cid.Parse(inputCidString)
@@ -116,52 +76,3 @@ func (n *Node) prepareJobInput(ctx context.Context, request *http.Request) (cid.
 
 	return inputCid, nil
 }
-
-func ExecuteJob(
-	ctx context.Context,
-	apiClient *publicapi.RequesterAPIClient,
-	cm *system.CleanupManager,
-	j *model.Job) (*model.Job, error) {
-
-	err := job.VerifyJob(ctx, j)
-	if err != nil {
-		log.Fatal("Job failed to validate.")
-		return nil, err
-	}
-
-	j, err = submitJob(ctx, apiClient, j)
-	if err != nil {
-		return nil, err
-	}
-
-	jobReturn, found, err := apiClient.Get(ctx, j.Metadata.ID)
-	if err != nil || !found {
-		return nil, err
-	}
-
-	_, err = apiClient.GetJobState(ctx, jobReturn.Metadata.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	return jobReturn, nil
-}
-
-func submitJob(
-	ctx context.Context,
-	apiClient *publicapi.RequesterAPIClient,
-	j *model.Job,
-) (*model.Job, error) {
-	j, err := apiClient.Submit(ctx, j)
-	if err != nil {
-		return &model.Job{}, errors.Wrap(err, "failed to submit job")
-	}
-	return j, err
-}
-
-//func downloadJobResult(
-//	ctx context.Context,
-//	cm *system.CleanupManager,
-//	jobID string,
-//	downloadSettings ipfs.IPFSDownloadSettings,
-//)

@@ -18,12 +18,12 @@ func (a *Server) HandleInvokeLambda(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	err = a.node.InvokeLambdaFunction(ctx, wasmCid, c.Request)
+	jobID, err := a.node.InvokeLambdaFunction(ctx, wasmCid, c.Request)
 	if err != nil {
 		c.Error(err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, nil)
+	c.JSON(http.StatusOK, gin.H{"jobID": jobID})
 }
