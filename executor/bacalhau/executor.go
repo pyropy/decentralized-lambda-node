@@ -7,6 +7,7 @@ import (
 	"github.com/filecoin-project/bacalhau/pkg/model"
 	"github.com/filecoin-project/bacalhau/pkg/requester/publicapi"
 	"github.com/filecoin-project/bacalhau/pkg/system"
+	"github.com/ipfs/go-cid"
 	"github.com/pyropy/decentralised-lambda/job"
 	"log"
 )
@@ -22,16 +23,26 @@ func NewExecutor(addr string) *Executor {
 	}
 }
 
-func (e *Executor) ExecuteJob(ctx context.Context, job *job.Job) error {
+func (e *Executor) ExecuteJob(ctx context.Context, job *job.Job) (cid.Cid, error) {
 	cm := system.NewCleanupManager()
 	wasmJob := newWasmJob(job.Binary, job.Input)
 	defer cm.Cleanup()
 	j, err := ExecuteJob(ctx, e.bacalhauClient, cm, wasmJob)
 	if err != nil {
-		return err
+		return cid.Cid{}, err
 	}
-	log.Println(fmt.Sprintf("%+v", j))
-	return nil
+
+	results, err := e.bacalhauClient.GetResults(ctx, j.Job.Metadata.ID)
+	if err != nil {
+		return cid.Cid{}, err
+	}
+
+	resultCid, err := cid.Parse(results[0].Data.CID)
+	if err != nil {
+		return cid.Cid{}, err
+	}
+
+	return resultCid, nil
 }
 
 func ExecuteJob(
@@ -68,9 +79,7 @@ func ExecuteJob(
 		return nil, err
 	}
 
-	fmt.Println(js)
-
-	// TODO: Download job results
+	fmt.Println(js.State)
 
 	return jobReturn, nil
 }

@@ -16,6 +16,7 @@ import (
 var (
 	DefaultTimeout              = time.Second * 300
 	HowFrequentlyToUpdateTicker = 50 * time.Millisecond
+	AutoDownloadFolderPerm      = 0755
 )
 
 type eventStruct struct {

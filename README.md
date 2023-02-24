@@ -12,7 +12,9 @@ go run cmd/main.go
 
 ## Example usage
 
-In this example we will run a lambda function that returns a greeting message. This function is written using [decentralised-lambda-runtime](https://github.com/pyropy/decentralised-lambda-runtime). Here's the source code:
+In this example we will run a lambda function that returns a greeting message. This function is written
+using [decentralised-lambda-runtime](https://github.com/pyropy/decentralised-lambda-runtime). Here's the source code:
+
 ```rust
 use decentralised_lambda_runtime::{Error, LambdaEvent};
 use serde::{Deserialize, Serialize};
@@ -45,7 +47,8 @@ pub(crate) fn my_handler(event: LambdaEvent<Request>) -> Result<Response, Error>
 }
 ```
 
-This function is compiled to WASM and then uploaded to the IPFS network. The CID of the WASM file is then used to invoke the function.
+This function is compiled to WASM and then uploaded to the IPFS network. The CID of the WASM file is then used to invoke
+the function.
 
 ```bash
 # Invoke a function
@@ -55,4 +58,14 @@ curl --request POST \
   --data '{
 	"name": "Lambda"
 }'
+```
+
+And the response is:
+
+```json
+{
+  "result": {
+    "msg": "Hello, Lambda"
+  }
+}
 ```

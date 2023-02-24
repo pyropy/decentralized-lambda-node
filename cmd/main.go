@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/pyropy/decentralised-lambda/api"
 	"github.com/pyropy/decentralised-lambda/node"
@@ -19,6 +20,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	fmt.Println(nodeCfg)
 
 	node, err := node.NewNode(&nodeCfg)
 	if err != nil {

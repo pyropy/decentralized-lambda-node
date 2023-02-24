@@ -2,12 +2,12 @@ package node
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/ipfs/go-cid"
 	"github.com/pyropy/decentralised-lambda/executor/bacalhau"
 	"github.com/pyropy/decentralised-lambda/job"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -38,24 +38,42 @@ func NewNode(cfg *Config) (*Node, error) {
 	return &Node{ipfsClient: ipfsClient, bacalhauExecutor: bacalhauExecutor}, nil
 }
 
-func (n *Node) InvokeLambdaFunction(ctx context.Context, wasmCid cid.Cid, request *http.Request) (string, error) {
+func (n *Node) InvokeLambdaFunction(ctx context.Context, wasmCid cid.Cid, request *http.Request) (interface{}, error) {
 	cm := system.NewCleanupManager()
 	inputCid, err := n.prepareJobInput(ctx, request)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	fmt.Println("inputCid", inputCid)
 	j := job.NewJob("", wasmCid, inputCid)
 	defer cm.Cleanup()
 
-	err = n.bacalhauExecutor.ExecuteJob(ctx, j)
+	resultCid, err := n.bacalhauExecutor.ExecuteJob(ctx, j)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	log.Println(fmt.Sprintf("%+v", j))
-	return "", nil
+	bodyCid := fmt.Sprintf("%s/outputs/output.json", resultCid.String())
+
+	bodyBuf, err := n.ipfsClient.Cat(bodyCid)
+	if err != nil {
+		return nil, err
+	}
+
+	bodyBytes, err := io.ReadAll(bodyBuf)
+	if err != nil {
+		return nil, err
+	}
+
+	var b map[string]interface{}
+
+	err = json.Unmarshal(bodyBytes, &b)
+	if err != nil {
+		return nil, err
+	}
+
+	return b, nil
 }
 
 func (n *Node) prepareJobInput(ctx context.Context, request *http.Request) (cid.Cid, error) {
