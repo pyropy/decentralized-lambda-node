@@ -1,3 +1,2 @@
 IPFS_ENDPOINT="/ip4/0.0.0.0/tcp/5001"
-BACALHAU_ENDPOINT="0.0.0.0:52858"
-API_PORT="1234"
+BACALHAU_ENDPOINT="http://bootstrap.development.bacalhau.org:1234"
