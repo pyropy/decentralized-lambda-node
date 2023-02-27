@@ -1,33 +1,19 @@
 package main
 
 import (
-	"fmt"
-	"github.com/kelseyhightower/envconfig"
-	"github.com/pyropy/decentralised-lambda/api"
-	"github.com/pyropy/decentralised-lambda/node"
+	"github.com/pyropy/decentralised-lambda/cli"
+	ufcli "github.com/urfave/cli/v2"
 )
 
 func main() {
-	var apiCfg api.Config
-	var nodeCfg node.Config
-
-	err := envconfig.Process("", &apiCfg)
-	if err != nil {
-		panic(err)
+	app := &ufcli.App{
+		Name: "decentralised-lambda",
+		Commands: []*ufcli.Command{
+			&cli.WasmCmd,
+			&cli.NodeCmd,
+		},
 	}
 
-	err = envconfig.Process("", &nodeCfg)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println(nodeCfg)
-
-	node, err := node.NewNode(&nodeCfg)
-	if err != nil {
-		panic(err)
-	}
-
-	api := api.NewServer(&apiCfg, node)
-	api.Run()
+	app.Setup()
+	cli.RunApp(app)
 }

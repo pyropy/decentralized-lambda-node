@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ipfs/go-cid"
-	"github.com/pyropy/decentralised-lambda/executor/bacalhau"
-	"github.com/pyropy/decentralised-lambda/job"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ipfs/go-cid"
+	"github.com/pyropy/decentralised-lambda/executor/bacalhau"
+	"github.com/pyropy/decentralised-lambda/job"
 
 	"github.com/filecoin-project/bacalhau/pkg/system"
 	shell "github.com/ipfs/go-ipfs-api"
@@ -38,15 +39,22 @@ func NewNode(cfg *Config) (*Node, error) {
 	return &Node{ipfsClient: ipfsClient, bacalhauExecutor: bacalhauExecutor}, nil
 }
 
-func (n *Node) InvokeLambdaFunction(ctx context.Context, wasmCid cid.Cid, request *http.Request) (interface{}, error) {
+func (n *Node) InvokeLambdaFunction(ctx context.Context, jobSpecCid cid.Cid, request *http.Request) (interface{}, error) {
 	cm := system.NewCleanupManager()
+
+	jobSpec, err := n.getJobSpec(ctx, jobSpecCid)
+	if err != nil {
+		return nil, err
+	}
+
 	inputCid, err := n.prepareJobInput(ctx, request)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println("inputCid", inputCid)
-	j := job.NewJob("", wasmCid, inputCid)
+	j := job.NewJobFromJobSpec(jobSpec)
+	j.SetInput(inputCid)
+
 	defer cm.Cleanup()
 
 	resultCid, err := n.bacalhauExecutor.ExecuteJob(ctx, j)
@@ -74,6 +82,28 @@ func (n *Node) InvokeLambdaFunction(ctx context.Context, wasmCid cid.Cid, reques
 	}
 
 	return b, nil
+}
+
+func (n *Node) getJobSpec(ctx context.Context, jobSpecCID cid.Cid) (*job.JobSpec, error) {
+	jobSpecCidString := jobSpecCID.String()
+	jobSpecBuf, err := n.ipfsClient.Cat(jobSpecCidString)
+	if err != nil {
+		return nil, err
+	}
+
+	jobSpecBytes, err := io.ReadAll(jobSpecBuf)
+	if err != nil {
+		return nil, err
+	}
+
+	var jobSpec job.JobSpec
+
+	err = json.Unmarshal(jobSpecBytes, &jobSpec)
+	if err != nil {
+		return nil, err
+	}
+
+	return &jobSpec, nil
 }
 
 func (n *Node) prepareJobInput(ctx context.Context, request *http.Request) (cid.Cid, error) {
