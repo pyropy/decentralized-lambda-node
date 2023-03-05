@@ -1,6 +1,6 @@
-# Decentralised Lambda Node
+# Decentralized Lambda Node
 
-Goal of this project is to provide an interface for invoking WASM serverless functions on decentralised networks.
+Goal of this project is to provide an interface for invoking WASM serverless functions on decentralized networks.
 
 Currently, only Bacalhau network is supported but the aim is to support other networks in future as well.
 
@@ -15,10 +15,10 @@ go run cmd/main.go node start
 ## Example usage
 
 In this example we will run a lambda function that returns a greeting message. This function is written
-using [decentralised-lambda-runtime](https://github.com/pyropy/decentralised-lambda-runtime). Here's the source code:
+using [decentralized-lambda-runtime](https://github.com/pyropy/decentralized-lambda-runtime). Here's the source code:
 
 ```rust
-use decentralised_lambda_runtime::{Error, LambdaEvent};
+use decentralized_lambda_runtime::{Error, LambdaEvent};
 use serde::{Deserialize, Serialize};
 
 
